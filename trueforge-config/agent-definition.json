@@ -1,0 +1,65 @@
+{
+  "name": "forge-coding-agent",
+  "description": "ForgeCode editor-native coding agent. Reads, searches and edits the VS Code workspace exclusively through the forgecode-workspace MCP server; every write and shell command pauses for human approval.",
+  "x-forgecode": {
+    "instructions_file": "instructions/forge-coding-agent.md",
+    "skills_dir": "skills",
+    "comment": "The x-forgecode block is consumed by the ForgeCode provisioner and stripped before the definition is sent to TrueForge. manifest.model.name is filled from catalog.yaml (models.primary)."
+  },
+  "manifest": {
+    "model": {
+      "name": "",
+      "params": {
+        "temperature": 0.1,
+        "max_tokens": 8192,
+        "parallel_tool_calls": true
+      }
+    },
+    "instructions": "",
+    "mcp_servers": [
+      {
+        "name": "forgecode-workspace",
+        "preload": false,
+        "enable_tools": ["@all"],
+        "disable_tools": [],
+        "preload_tools": ["retrieve_context", "propose_edit"],
+        "require_approval_for_tools": ["propose_edit", "run_terminal_command", "@destructive"]
+      }
+    ],
+    "skills": [],
+    "config": {
+      "iteration_limit": 300,
+      "sandbox": {
+        "enabled": false,
+        "file_downloads": false
+      },
+      "dynamic_sub_agents": {
+        "enabled": true
+      },
+      "context_management": {
+        "compaction": {
+          "enabled": true,
+          "trigger": {
+            "type": "input_tokens",
+            "value": 60000
+          }
+        },
+        "large_tool_response": {
+          "enabled": true
+        }
+      },
+      "generative_ui": {
+        "enabled": false
+      },
+      "ask_user_questions": {
+        "enabled": true
+      },
+      "web_search": {
+        "enabled": false
+      },
+      "memory": {
+        "enabled": false
+      }
+    }
+  }
+}

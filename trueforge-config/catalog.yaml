@@ -1,0 +1,54 @@
+# ForgeCode TrueForge catalog overrides.
+#
+# Values of the form ${VAR} or ${VAR:-default} are substituted from the
+# environment (and from the repository-root .env file) by the ForgeCode
+# provisioner (`scripts/setup-trueforge.sh`, or "ForgeCode: Register Agent,
+# Models and MCP Server with TrueForge" inside VS Code). A provider whose
+# required values are missing is skipped with a warning instead of being
+# registered half-configured.
+#
+# Provider naming follows TrueForge: built-in provider types (openai,
+# anthropic, google-gemini, fireworks, together, ...) are registered under
+# their type name; `custom` (any OpenAI-compatible endpoint) takes an explicit
+# `name`. Model references are `<provider name>/<model name>`; the provisioner
+# derives them from `role` and prints them.
+
+model_providers:
+  # Primary model. For Task C point FORGE_PRIMARY_BASE_URL at an unreachable
+  # endpoint (http://localhost:9999/v1) or set an invalid FORGE_PRIMARY_API_KEY.
+  - role: primary
+    type: ${FORGE_PRIMARY_PROVIDER_TYPE:-custom}
+    name: ${FORGE_PRIMARY_PROVIDER_NAME:-forge-primary}
+    base_url: ${FORGE_PRIMARY_BASE_URL:-}
+    api_key: ${FORGE_PRIMARY_API_KEY}
+    models:
+      - name: primary
+        model_id: ${FORGE_PRIMARY_MODEL_ID:-gpt-4.1}
+        context_length: ${FORGE_PRIMARY_CONTEXT_LENGTH:-128000}
+        max_output_tokens: ${FORGE_PRIMARY_MAX_OUTPUT_TOKENS:-16384}
+        reasoning_efforts: ${FORGE_PRIMARY_REASONING_EFFORTS:-}
+
+  # Fallback model used by ForgeCode's automatic failover.
+  - role: fallback
+    type: ${FORGE_FALLBACK_PROVIDER_TYPE:-anthropic}
+    name: ${FORGE_FALLBACK_PROVIDER_NAME:-forge-fallback}
+    base_url: ${FORGE_FALLBACK_BASE_URL:-}
+    api_key: ${FORGE_FALLBACK_API_KEY}
+    models:
+      - name: fallback
+        model_id: ${FORGE_FALLBACK_MODEL_ID:-claude-sonnet-5-5}
+        context_length: ${FORGE_FALLBACK_CONTEXT_LENGTH:-200000}
+        max_output_tokens: ${FORGE_FALLBACK_MAX_OUTPUT_TOKENS:-16384}
+        reasoning_efforts: ${FORGE_FALLBACK_REASONING_EFFORTS:-}
+
+# The embedded VS Code workspace MCP server. The extension re-registers this
+# entry on every activation with its live port and bearer token.
+mcp_servers:
+  - name: forgecode-workspace
+    type: remote
+    url: http://${FORGECODE_MCP_HOST:-127.0.0.1}:${FORGECODE_MCP_PORT:-8791}/mcp
+    description: >-
+      VS Code workspace tools (budgeted context retrieval, symbol search, ranged
+      file reads, staged per-hunk edits, sandboxed test runner) served by the
+      ForgeCode extension.
+    bearer_token: ${FORGECODE_MCP_TOKEN}

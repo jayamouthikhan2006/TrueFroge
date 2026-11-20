@@ -1,0 +1,8 @@
+node_modules/
+extension/dist/
+extension/out/
+*.vsix
+.env
+.logs/
+.env.*
+!.env.example

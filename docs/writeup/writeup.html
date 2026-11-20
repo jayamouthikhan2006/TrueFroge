@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ForgeCode Write-up</title>
+<style>
+  @page { size: A4; margin: 13mm 14mm 12mm; }
+  :root { --ink: #1b1f24; --muted: #57606a; --line: #d0d7de; --accent: #0b5cad; --soft: #f3f6f9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); background: #fff; font: 9.1pt/1.38 "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 15.5pt; margin: 0 0 1px; letter-spacing: -0.2px; }
+  .sub { color: var(--muted); margin: 0 0 5px; }
+  h2 { font-size: 10.8pt; margin: 9px 0 3px; padding-bottom: 2px; border-bottom: 1.5px solid var(--accent); color: var(--accent); break-after: avoid; }
+  p { margin: 2px 0 4px; }
+  ul { margin: 2px 0 4px; padding-left: 15px; }
+  li { margin: 1px 0; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 8.2pt; background: var(--soft); padding: 0 2px; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 3px 0 5px; font-size: 8.4pt; break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 2px 5px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  .k td:first-child { width: 21%; font-weight: 600; background: var(--soft); }
+  .callout { border-left: 3px solid var(--accent); background: var(--soft); padding: 3px 7px; margin: 4px 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fill { background: #fff3c4; padding: 0 3px; }
+  .ts { white-space: nowrap; font-family: Consolas, monospace; font-size: 8.2pt; }
+</style>
+</head>
+<body>
+
+<h1>ForgeCode: an editor-native coding agent on TrueForge</h1>
+<p class="sub">TrueFoundry Forge-a-thon, Round 1 · VS Code extension whose agent loop runs on TrueForge · evaluated on <code>pallets/flask</code> 3.1.3 (<code>22d92470</code>)</p>
+
+<h2>1. Team</h2>
+<table class="k">
+  <tr><td>Team / Techfest ID</td><td><b>Domino</b> · <b>TM-EFE00783131</b></td></tr>
+  <tr><td>Members</td><td>Praveen · Dhruthidhar · Jayamouthikhan (GitHub <a href="https://github.com/jayamouthikhan2006">@jayamouthikhan2006</a>)</td></tr><tr><td>College</td><td>Amrita Vishwa Vidyapeetham, Chennai (all members)</td></tr>
+  <tr><td>Links</td><td>Repository <a href="https://github.com/jayamouthikhan2006/TrueFroge">https://github.com/jayamouthikhan2006/TrueFroge</a> · Demo video <a href="https://github.com/jayamouthikhan2006/TrueFroge/blob/main/docs/demo/forgecode-demo.mp4">docs/demo/forgecode-demo.mp4</a> (3:47)</td></tr>
+</table>
+
+<h2>2. Starting point</h2>
+<p><b>From scratch.</b> No editor-agent project was forked, so there is no upstream loop to replace and no fork commit to declare. The extension uses native VS Code APIs (<code>CodeLensProvider</code>, decorations, <code>TextDocumentContentProvider</code>, a webview view). Third-party code is limited to libraries: <code>@truefoundry/trueforge-sdk</code> 0.185.0, <code>@modelcontextprotocol/sdk</code> 1.32.2, <code>diff</code> 9, <code>express</code> 5, <code>zod</code> 4, <code>yaml</code> 2. Licence: MIT.</p>
+
+<h2>3. Architecture on TrueForge</h2>
+<p><b>Client of a TrueForge agent.</b> Every prompt becomes a turn on a TrueForge session (<code>POST /sessions/{id}/turns</code>, SSE, via the TypeScript SDK) created from the <code>forge-coding-agent</code> definition in <code>trueforge-config/</code>; the extension renders the streamed events and never calls a model. TrueForge runs locally (<code>npx @truefoundry/trueforge@latest</code>, SQLite); <code>scripts/setup-trueforge.sh</code> starts it and registers models, MCP server, skills and agent.</p>
+<p><b>Editor capabilities as MCP tools.</b> The extension embeds an MCP server (Streamable HTTP <code>127.0.0.1:8791/mcp</code>, bearer token) exposing <code>retrieve_context</code>, <code>search_symbols</code>, <code>read_file_range</code>, <code>list_directory</code>, <code>load_skill</code>, <code>propose_edit</code> and <code>run_terminal_command</code>; the agent decides what to read, change and run.</p>
+<table>
+  <tr><th>Harness feature</th><th>Setting</th><th>Why</th></tr>
+  <tr><td>Tool approval</td><td><code>require_approval_for_tools: [propose_edit, run_terminal_command, @destructive]</code></td><td>The approval pause <i>is</i> the diff review (below); commands get an Allow/Deny card and an allow-list.</td></tr>
+  <tr><td>Deferred tool loading</td><td><code>preload: false</code>, <code>preload_tools: [retrieve_context, propose_edit]</code></td><td>Keeps tool schemas out of the prompt; the rest load via <code>list_tools</code>/<code>call_tool</code>. <code>propose_edit</code> is preloaded because weaker models mangled its arguments through <code>call_tool</code>.</td></tr>
+  <tr><td>Sub-agents</td><td><code>dynamic_sub_agents</code> + <i>repo-explorer</i> brief</td><td>Exploration runs in a child thread and returns a condensed file map, saving main-context tokens.</td></tr>
+  <tr><td>Compaction / large results</td><td><code>compaction</code> at 60k input tokens; <code>large_tool_response</code></td><td>Long runs and long pytest output stay inside the budget.</td></tr>
+  <tr><td>Skills</td><td><code>SKILL.md</code> packs (flask-contributor, flask-architecture)</td><td>Native via git when a sandbox exists; on Windows served progressively through deferred <code>load_skill</code>.</td></tr>
+  <tr><td>Client tools</td><td><code>ask_user_question</code> → <code>tool.response_required</code></td><td>Shown as a question card; answered with <code>user.tool_response</code> so a turn never hangs.</td></tr>
+</table>
+<div class="callout"><b>Approvals drive the diff review.</b> <code>propose_edit</code> never writes. When TrueForge pauses for its approval, ForgeCode applies the search/replace edits in memory and renders red/green hunks with <code>✓ Accept Hunk · ✗ Reject Hunk · ✓ Accept All in File · ✗ Reject File</code> CodeLenses. Once every hunk is decided it takes an undo snapshot, writes the accepted hunks byte-exact and answers <code>allow</code> (or <code>deny</code> with a reason). <b>Stop</b> (<code>Esc</code>) discards staged hunks, aborts the stream and process tree, calls <code>POST /sessions/{id}/cancel</code> (the paused tool never runs) and checks <code>git status</code>. <b>Failover</b>: a <code>[Model Error]</code> on connection refused, 401/403/404/408/429/5xx or a 120 s silent watchdog <code>PATCH</code>es the same session to the fallback model and re-dispatches the turn.</div>
+
+<h2>4. How context is selected</h2>
+<p>A workspace index (212 files, 1,539 chunks of Flask, built in under a second, refreshed by file watchers) chunks Python by symbol (decorators incl. multi-line <code>@click.option</code> stacks, signatures, docstrings, methods) and rst/Markdown by section. <code>retrieve_context</code> scores each chunk <b>0.5·symbol match + 0.3·BM25 + 0.2·path proximity</b>: head-clause terms count double, a decorator-exemplar signal (<code>@click.command</code> for "add a CLI command"), verbatim identifiers, and a reference signal that finds registration sites (<code>FlaskGroup.__init__ → add_command(...)</code>). Deliverable words ("covered by a test", "documented") drive <i>facets</i>: the packer reserves a leader for source, test and docs chosen by affinity (<code>cli.py ↔ test_cli.py ↔ cli.rst</code>), then packs greedily into a <b>token budget (default 6,000; the agent may raise it)</b>, falling back to signatures for chunks over 20% of the budget or files over 40%. <code>@file</code>/<code>@symbol</code> mentions are resolved with VS Code's symbol providers and counted against the same budget. Every call returns a <b>ContextManifest</b> (files considered vs. selected, score components, a reason per file, tokens used) to the model and to the panel's budget meter; in the recorded Task B it selected 8 files led by <code>cli.py</code>, <code>cli.rst</code>, <code>app.py</code> and <code>test_cli.py</code> at 5,990 / 6,000 tokens.</p>
+
+<h2>5. Model setup</h2>
+<table>
+  <tr><th>Model</th><th>Role / use</th><th>Where it ran</th><th>Approx. cost</th></tr>
+  <tr><td><b>NVIDIA Nemotron 3 Ultra</b> 550B-A55B</td><td>Primary (demo)</td><td>NVIDIA NIM API, via a self-hosted OmniRoute gateway (OpenAI-compatible) on a team laptop</td><td>$0: free NVIDIA developer API (build.nvidia.com); no charges incurred</td></tr>
+  <tr><td><b>NVIDIA Nemotron 3.5 Lightning</b> 30B-A3B</td><td>Fallback (Task C)</td><td>same route, separate TrueForge provider</td><td>$0 (same free developer API)</td></tr>
+  <tr><td>Gemini 3 Flash (preview), 3.5 Flash, 3.1 Flash-Lite, 4 Hydrogen</td><td>Development and Task A rehearsals</td><td>Google AI Studio free tier (20 requests/model/day)</td><td>$0</td></tr>
+  <tr><td>qwen2.5-coder 7B</td><td>Evaluated, rejected (no native tool calls, 4k context)</td><td>Ollama, local</td><td>$0</td></tr>
+</table>
+<p>Models live in TrueForge's catalog (<code>trueforge-config/catalog.yaml</code>, values from <code>.env</code>; <code>.env.example</code> ships, keys are never committed). Any TrueForge provider type or OpenAI-compatible endpoint works for either role. Switching: edit <code>.env</code> and re-run the setup script, or pick any TrueForge model in the panel dropdown / <b>ForgeCode: Switch Model</b> (also <code>forgecode.models.primary</code>/<code>.fallback</code>). Gemini 3.x needs each tool call's <code>thought_signature</code> echoed back, which TrueForge 0.185 drops; <code>scripts/gemini-gateway.mjs</code> restores it between TrueForge and Google.</p>
+
+<h2>6. Scorecard</h2>
+<table>
+  <tr><th>#</th><th>Criterion</th><th>Video</th><th>Claim</th></tr>
+  <tr><td>A1</td><td>Inline edit</td><td class="ts" id="ts-a1">0:12–0:37</td><td><code>Ctrl+Shift+I</code> on <code>get_debug_flag</code> → 2 hunks rendered in the editor with per-hunk Accept/Reject CodeLenses → <code>FLASK_DEBUG=off</code> prints <code>False</code>.</td></tr>
+  <tr><td>A2</td><td>Agent mode</td><td class="ts" id="ts-a2">1:06–2:30</td><td>No file named; the agent discovers and edits 4 files (<code>cli.py</code>, <code>test_cli.py</code>, <code>docs/cli.rst</code>, <code>CHANGES.rst</code>; <code>git diff --stat</code> shown), runs pytest through the approval gate; <code>pytest tests/test_cli.py -q</code> → 59 passed; <code>flask config</code> prints masked JSON.</td></tr>
+  <tr><td>A3</td><td>Streaming &amp; cancellation</td><td class="ts" id="ts-a3">0:56–1:06</td><td>Tokens and tool calls stream live; Esc cancels in ≈ 44 ms, the TrueForge turn ends <code>cancelled</code>, <code>git status</code> clean.</td></tr>
+  <tr><td>B1</td><td>Context assembly</td><td class="ts" id="ts-b1">1:09</td><td>Budgeted hybrid retrieval; the ContextManifest shows the files chosen and why, at 5,990 / 6,000 tokens.</td></tr>
+  <tr><td>B2</td><td>Diff safety</td><td class="ts" id="ts-b2">0:21–0:49</td><td><code>git status</code> clean while hunks are pending; per-hunk accept; Undo restores the exact bytes and Redo re-applies.</td></tr>
+  <tr><td>B3</td><td>Resilience (Task C)</td><td class="ts" id="ts-b3">3:01–3:34</td><td>Dead primary → banner "Primary model failed (Connection Refused)… failing over" → fallback model takes over with no user action; workspace unchanged until the user accepts.</td></tr>
+  <tr><td>B4</td><td>TrueForge integration</td><td class="ts" id="ts-b4">1:15, 2:33–3:00</td><td>MCP tools with approval-driven review; deferred tool loading (<code>list_tools</code>/<code>call_tool</code>), 55 approval checkpoints and a context compaction visible in the TrueForge session for the Task B run (107 tool calls).</td></tr>
+  <tr><td>C1</td><td>Video</td><td class="ts">0:00–3:47</td><td>Tasks A, B, C in order, each verified on screen, with the TrueForge session for Task B at 2:33; model waits are fast-forwarded and labelled, never cut between instruction and diff.</td></tr>
+  <tr><td>C2</td><td>Write-up</td><td class="ts">—</td><td>This document: design decisions, context strategy, model setup, trade-offs and limitations.</td></tr>
+</table>
+
+<h2>7. Tools used</h2>
+<p>TrueForge 0.185.1 and its TypeScript SDK · MCP TypeScript SDK · VS Code extension API · TypeScript 5.9 · esbuild · <code>diff</code>, express, zod, yaml · OmniRoute (model gateway) · Python 3.13 + pytest 8 for the Flask checkout · ffmpeg (screen recording and captions). <b>Claude Code (Anthropic)</b> was used as an AI coding assistant throughout development, testing and the demo recording.</p>
+
+<h2>8. Known limitations and what we would do with another month</h2>
+<div class="two">
+<ul>
+  <li>With Nemotron 3 Ultra the recorded Task B took ≈ 14 min wall-clock (model latency and its own test iterations); the video fast-forwards model waits and plays Task B at 1.6×. Task A/Stop, Task B and Task C are three separate continuous takes.</li>
+  <li>TrueForge 0.185 drops Gemini 3.x thought signatures; we ship a small gateway instead of patching the harness.</li>
+  <li>Native skills need a sandbox (macOS/Linux); on Windows they go through <code>load_skill</code>.</li>
+  <li>The Python extractor is indentation/regex based; token counts are estimates.</li>
+  <li>Single-root workspace, one run at a time; failover re-dispatches the whole turn; typing in a file under review withdraws its hunks.</li>
+</ul>
+<ul>
+  <li>Upstream the thought-signature fix to TrueForge (a natural Round 2 PR).</li>
+  <li>Tree-sitter + LSP reference graphs; a per-model tokenizer; embeddings as a fourth signal, tuned on a labelled Flask query set.</li>
+  <li>Allow-for-session approval policies and merging manual edits into pending hunks.</li>
+  <li>Mid-turn failover that resumes from the last completed tool call.</li>
+  <li>CI on Linux running the end-to-end suite and native skills in TrueForge's sandbox.</li>
+</ul>
+</div>
+
+</body>
+</html>

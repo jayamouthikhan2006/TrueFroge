@@ -1,0 +1,307 @@
+{
+  "name": "forgecode",
+  "displayName": "ForgeCode — TrueForge Coding Agent",
+  "description": "Editor-native coding agent whose entire agent loop runs on TrueForge. Inline edits, multi-file agent mode, per-hunk review, undo, streaming, cancellation and automatic model failover.",
+  "version": "0.1.0",
+  "publisher": "forgecode",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forgecode",
+          "title": "ForgeCode",
+          "icon": "media/forge.svg"
+        }
+      ]
+    },
+    "views": {
+      "forgecode": [
+        {
+          "type": "webview",
+          "id": "forgecode.agentView",
+          "name": "ForgeCode Agent"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "forgecode.inlineEdit",
+        "title": "Inline Edit with TrueForge",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.openAgent",
+        "title": "Open Agent Panel",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.acceptHunk",
+        "title": "Accept Hunk",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.rejectHunk",
+        "title": "Reject Hunk",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.acceptFile",
+        "title": "Accept All Hunks in File",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.rejectFile",
+        "title": "Reject All Hunks in File",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.acceptAll",
+        "title": "Accept All Pending Hunks",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.rejectAll",
+        "title": "Reject All Pending Hunks",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.jumpToHunk",
+        "title": "Jump to Pending Hunk",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.undoLastEdit",
+        "title": "Undo Last Agent Edit",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.redoLastEdit",
+        "title": "Redo Last Agent Edit",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.cancelRun",
+        "title": "Stop Generation",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.switchModel",
+        "title": "Switch Model",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.provision",
+        "title": "Register Agent, Models and MCP Server with TrueForge",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.openSessionInTrueForge",
+        "title": "Open Active Session in TrueForge",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.showContextManifest",
+        "title": "Show Last Context Manifest",
+        "category": "ForgeCode"
+      },
+      {
+        "command": "forgecode.rebuildIndex",
+        "title": "Rebuild Workspace Context Index",
+        "category": "ForgeCode"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "forgecode.inlineEdit",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "forgecode.cancelRun",
+        "key": "escape",
+        "when": "forgecode.running && !suggestWidgetVisible && !findWidgetVisible && !inlineSuggestionVisible"
+      },
+      {
+        "command": "forgecode.acceptHunk",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && forgecode.hasPendingHunks"
+      },
+      {
+        "command": "forgecode.rejectHunk",
+        "key": "ctrl+shift+backspace",
+        "mac": "cmd+shift+backspace",
+        "when": "editorTextFocus && forgecode.hasPendingHunks"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "forgecode.inlineEdit",
+          "when": "editorHasSelection",
+          "group": "forgecode@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "forgecode.acceptHunk",
+          "when": "forgecode.hasPendingHunks"
+        },
+        {
+          "command": "forgecode.rejectHunk",
+          "when": "forgecode.hasPendingHunks"
+        },
+        {
+          "command": "forgecode.jumpToHunk",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ForgeCode",
+      "properties": {
+        "forgecode.trueforge.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8790",
+          "description": "Base URL of the TrueForge agent server (`npx @truefoundry/trueforge@latest`)."
+        },
+        "forgecode.trueforge.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Optional bearer token for TrueForge (leave empty for standalone mode with auth disabled)."
+        },
+        "forgecode.trueforge.agentName": {
+          "type": "string",
+          "default": "forge-coding-agent",
+          "description": "Name of the TrueForge agent definition used for every session."
+        },
+        "forgecode.trueforge.configDir": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the trueforge-config directory. Empty uses the copy bundled with the extension."
+        },
+        "forgecode.trueforge.autoProvision": {
+          "type": "boolean",
+          "default": true,
+          "description": "Register the workspace MCP server (and the agent, if missing) with TrueForge on startup."
+        },
+        "forgecode.models.primary": {
+          "type": "string",
+          "default": "",
+          "description": "Primary TrueForge model (`provider/model`). Empty uses `models.primary` from trueforge-config/catalog.yaml."
+        },
+        "forgecode.models.fallback": {
+          "type": "string",
+          "default": "",
+          "description": "Fallback TrueForge model used on automatic failover. Empty uses `models.fallback` from catalog.yaml."
+        },
+        "forgecode.failover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically re-dispatch a turn on the fallback model when the primary model is unreachable, times out, or returns 401/403/429/5xx."
+        },
+        "forgecode.failover.firstEventTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 5000,
+          "description": "If the model produces no output within this window, the turn is treated as a timeout and failover is triggered."
+        },
+        "forgecode.context.tokenBudget": {
+          "type": "number",
+          "default": 6000,
+          "minimum": 500,
+          "maximum": 64000,
+          "description": "Token budget for automatically retrieved context (retrieve_context)."
+        },
+        "forgecode.context.maxIndexedFiles": {
+          "type": "number",
+          "default": 5000,
+          "description": "Maximum number of files kept in the workspace context index."
+        },
+        "forgecode.mcp.port": {
+          "type": "number",
+          "default": 8791,
+          "description": "Port of the embedded workspace MCP server (Streamable HTTP at /mcp, legacy SSE at /sse)."
+        },
+        "forgecode.mcp.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind address for the embedded MCP server. Keep this on loopback."
+        },
+        "forgecode.mcp.authToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token TrueForge must present to the MCP server. Empty generates and stores one automatically."
+        },
+        "forgecode.terminal.allowedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "pytest",
+            "python -m pytest",
+            "python -c",
+            "python -m flask",
+            "flask",
+            "git status",
+            "git diff",
+            "ruff",
+            "mypy"
+          ],
+          "description": "Command prefixes the agent may run through run_terminal_command. Anything else is refused."
+        },
+        "forgecode.terminal.timeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "description": "Hard timeout for agent-run terminal commands."
+        },
+        "forgecode.terminal.python": {
+          "type": "string",
+          "default": "",
+          "description": "Python interpreter for agent commands. Empty auto-detects .venv/venv in the workspace, then `python`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p . --noEmit",
+    "check": "npm run typecheck && npm run build",
+    "provision": "node dist/provision.js",
+    "package": "npm run check && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@truefoundry/trueforge-sdk": "0.185.0",
+    "cors": "^2.8.6",
+    "diff": "^9.0.0",
+    "express": "^5.3.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.19.0",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "typescript": "5.9.3"
+  }
+}
